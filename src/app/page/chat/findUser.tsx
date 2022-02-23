@@ -4,15 +4,14 @@ import { EnterOutlined } from '@ant-design/icons'
 import { useState } from 'react'
 import { useDispatch } from 'react-redux'
 import { clearMessages } from 'app/model/chat.controller'
+import { setTopic } from 'app/model/topic.controller'
 
 const FindUser = ({
   receiver,
   setUser,
-  setTopic,
 }: {
   receiver: string
   setUser: (value: string) => void
-  setTopic: (value: string) => void
 }) => {
   const [value, setValue] = useState('')
   const dispatch = useDispatch()
@@ -20,12 +19,12 @@ const FindUser = ({
   const stopChat = () => {
     dispatch(clearMessages())
     setUser('')
-    setTopic('')
+    dispatch(setTopic({ topic: '' }))
   }
 
   const selectReceiver = () => {
     setUser(value)
-    setTopic(value)
+    dispatch(setTopic({ topic: value }))
   }
 
   if (receiver)

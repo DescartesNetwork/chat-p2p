@@ -1,18 +1,15 @@
 import { useCallback, useEffect, useState, useMemo } from 'react'
-import moment from 'moment'
 import nacl from 'tweetnacl'
 import util from 'tweetnacl-util'
 import { useDispatch, useSelector } from 'react-redux'
 
-import { Col, Input, Row, Button, Typography, Card, Space, Modal } from 'antd'
+import { Col, Input, Row, Button, Card, Tabs } from 'antd'
 import { SendOutlined } from '@ant-design/icons'
 import FindUser from './findUser'
 
 import {
   decryptingMessage,
-  decryptKey,
   encryptingMessage,
-  encryptKey,
   MessageEncrypt,
 } from 'app/page/key'
 import 'antd/dist/antd.css'
@@ -20,9 +17,14 @@ import CopyPublicKey from './copyPub'
 import { fetchNewMessages, Message } from 'app/model/chat.controller'
 import { AppState } from 'app/model'
 import { db, TOPIC } from 'app/constants'
-import storage from 'shared/storage'
 import { useWallet } from '@senhub/providers'
 import HeaderChat from './header'
+import { decryptKeyPair, fetchKeyPair } from 'app/model/key.controller'
+import ListConversation from './listConversation'
+import ChatMessages from './chatMessages'
+import UseListConversation from 'app/hooks/useListConversation'
+import WaitingList from './waitingList'
+import { setTopic } from 'app/model/topic.controller'
 
 export type MessageData = MessageEncrypt & {
   owner: string
@@ -32,7 +34,7 @@ export type KeyEncrypt = {
   sk: string
   pk: string
 }
-export type KeyReceive = {
+export type Conversations = {
   address: string
   publicKey: string
 }
@@ -44,49 +46,15 @@ const GunChat = () => {
   const [receiver, setReceiver] = useState('')
   const [receiverPK, setReceiverPK] = useState<any>()
   const [chat, setChat] = useState(false)
-  const [mySecretKey, setMySecretKey] = useState('')
-  const [myPublicKey, setMyPublicKey] = useState('')
-  const [existed, setExisted] = useState(false)
-  const [keyPair, setKeyPair] = useState<KeyEncrypt>()
-  const [topic, setTopic] = useState(walletAddress)
   const [password, setPassword] = useState('')
-  const [visible, setVisible] = useState(false)
-  const [messRequest, setMessRequest] = useState('')
-  const [listPubKey, setListPubKey] = useState<KeyReceive[]>([])
-  const { messages } = useSelector((state: AppState) => state.chat)
-
   const dispatch = useDispatch()
-
-  const signUpToChat = useCallback(async () => {
-    const wallet = window.sentre.wallet
-    if (!wallet) throw new Error('Please connect wallet')
-    if (!password)
-      return window.notify({
-        type: 'error',
-        description: 'Please enter password',
-      })
-
-    const { signature } = await wallet.signMessage(
-      `start Conversation with password: ${password}`,
-    )
-    if (!signature) return
-
-    const secretKey = Buffer.from(signature.substring(0, 32))
-
-    setChat(true)
-    setExisted(true)
-    const keypair = nacl.box.keyPair.fromSecretKey(secretKey)
-    const pk = util.encodeBase64(keypair.publicKey)
-    const sk = util.encodeBase64(keypair.secretKey)
-
-    const encryptKeyPair: KeyEncrypt = {
-      pk: encryptKey(password, pk),
-      sk: encryptKey(password, sk),
-    }
-    storage.set('keypair', encryptKeyPair)
-    setMyPublicKey(pk)
-    setMySecretKey(sk)
-  }, [password])
+  const {
+    topic: { topic },
+    key: {
+      keyPairDecrypted: { myPublicKey, mySecretKey },
+    },
+  } = useSelector((state: AppState) => state)
+  const { listConversation } = UseListConversation(topic)
 
   const sharedKey = useMemo(() => {
     if (!receiverPK || !mySecretKey) return
@@ -101,104 +69,63 @@ const GunChat = () => {
         description: "Receiver's Public key wrong",
       })
     }
-  }, [receiverPK, mySecretKey])
+  }, [mySecretKey, receiverPK])
 
-  const getMessage = useCallback(async () => {
+  // const commonTopic = useMemo(() => {
+  //   if (!receiver) return ''
+  //   return walletAddress.substring(0, 22) + receiver.substring(22, 44)
+  // }, [receiver, walletAddress])
+
+  const listenReceiverTopic = useCallback(async () => {
+    if (topic !== receiver) return
     const messages = db.get(topic)
+    messages.map().once(async (data, id) => {
+      if (!data) return
+      try {
+        /** get history when send request && accepted */
+        if (data.owner === receiver && data.sendTo === walletAddress) {
+          console.log('check')
+          setReceiverPK(data.publicKey)
+          dispatch(setTopic({ topic: TOPIC }))
+        }
+        /** get history when accept a request */
+        listConversation.forEach((item) => {
+          if (item.address === data.sendTo) {
+            setReceiverPK(item.publicKey)
+            dispatch(setTopic({ topic: TOPIC }))
+          }
+        })
+      } catch (er) {
+        console.log(er)
+      }
+    })
+  }, [dispatch, listConversation, receiver, topic, walletAddress])
 
-    // ** get public key when connect with another people**
-    if (topic === walletAddress) {
-      const keys: string[] = []
-      const keysReceived: KeyReceive[] = []
-
-      await messages.map().once(async (data, id) => {
-        if (!data || !data.owner) return
-        try {
-          if (data.owner === walletAddress && data.sendTo) {
-            const address = data.sendTo as string
-            keys.push(address)
-          }
-        } catch (er) {
-          console.log(er)
+  const listenCommonTopic = useCallback(async () => {
+    if (!sharedKey) return
+    const messages = db.get(topic)
+    messages.map().once(async (data, id) => {
+      if (!data || !sharedKey) return
+      try {
+        const text = decryptingMessage(data, sharedKey) || ''
+        if (!text) return
+        const createdAt = id
+        const message: Message = {
+          text,
+          createdAt,
+          owner: data.owner,
         }
-      })
-      await messages.map().once(async (data, id) => {
-        if (!data || !data.owner) return
-        try {
-          if (data.owner !== walletAddress) {
-            if (!keys.includes(data.owner)) {
-              setVisible(true)
-              setMessRequest(data.chat)
-              setReceiverPK(data.publicKey)
-              setReceiver(data.owner)
-            } else {
-              keysReceived.push({
-                publicKey: data.publicKey,
-                address: data.owner,
-              })
-              setTimeout(() => {
-                setListPubKey(keysReceived)
-              }, 1000)
-            }
-          }
-        } catch (er) {
-          console.log(er)
-        }
-      })
-    } else if (topic === receiver) {
-      messages.map().once(async (data, id) => {
-        if (!data) return
-        try {
-          console.log(data)
-          if (data.owner === receiver && data.sendTo === walletAddress) {
-            setReceiverPK(data.publicKey)
-            setTopic(TOPIC)
-          }
-        } catch (er) {
-          console.log(er)
-        }
-      })
-    } else {
-      messages.map().once(async (data, id) => {
-        if (!data || !sharedKey) return
-        try {
-          const text = decryptingMessage(data, sharedKey) || ''
-          if (!text) return
-          const createdAt = id
-          const message: Message = {
-            text,
-            createdAt,
-            owner: data.owner,
-          }
-          dispatch(fetchNewMessages({ message }))
-        } catch (er) {
-          console.log(er)
-        }
-      })
-    }
-  }, [dispatch, receiver, sharedKey, topic, walletAddress])
+        dispatch(fetchNewMessages({ message }))
+      } catch (er) {
+        console.log(er)
+      }
+    })
+  }, [dispatch, sharedKey, topic])
 
   const startChat = useCallback(() => {
-    if (!keyPair || !password) return
-
-    const parsePk = decryptKey(password, keyPair.pk)
-    const parseSK = decryptKey(password, keyPair.sk)
-    if (!parsePk || !parseSK)
-      return window.notify({ type: 'error', description: 'Password wrong' })
-    setMyPublicKey(parsePk)
-    setMySecretKey(parseSK)
-
+    dispatch(decryptKeyPair({ password }))
     return setChat(true)
-  }, [keyPair, password])
-
-  const fetchKey = useCallback(() => {
-    const keypair: KeyEncrypt = storage.get('keypair')
-    if (keypair) {
-      setExisted(true)
-      return setKeyPair(keypair)
-    }
-    return setExisted(false)
-  }, [])
+  }, [dispatch, password])
 
   const sendMessage = async () => {
     if (!sharedKey) return
@@ -210,27 +137,7 @@ const GunChat = () => {
 
     db.get(topic).get(id).put(message)
 
-    setFormChat('')
-  }
-
-  const acceptChat = async () => {
-    const id = new Date().toISOString()
-    const message = db
-      .get('messages')
-      .set({ publicKey: myPublicKey, owner: walletAddress, sendTo: receiver })
-    await db.get(topic).get(id).put(message)
-    /**Get History */
-    await db.get(receiver).get(id).put(message)
-    await setTopic(TOPIC)
-    return setVisible(false)
-  }
-
-  const rejectChat = () => {
-    setReceiverPK('')
-    setMessRequest('')
-    setReceiver('')
-    setTopic('')
-    return setVisible(false)
+    return setFormChat('')
   }
 
   const requestChat = async () => {
@@ -243,6 +150,7 @@ const GunChat = () => {
       sendTo: receiver,
     })
     db.get(topic).get(id).put(message)
+
     return setFormChat('')
   }
 
@@ -251,42 +159,30 @@ const GunChat = () => {
     setPassword('')
   }
 
-  const startToChat = (receiver: string) => {
-    setReceiver(receiver)
-    setTopic(receiver)
-  }
+  useEffect(() => {
+    listenReceiverTopic()
+  }, [listenReceiverTopic])
 
   useEffect(() => {
-    ;(async () => {
-      if (!chat) return
-      await getMessage()
-    })()
-  }, [chat, getMessage])
+    listenCommonTopic()
+  }, [listenCommonTopic])
 
   useEffect(() => {
-    fetchKey()
-  }, [fetchKey])
-
+    dispatch(fetchKeyPair())
+    dispatch(setTopic({ topic: walletAddress }))
+  }, [dispatch, walletAddress])
+  console.log(topic)
   return (
     <Row gutter={[16, 16]}>
       <Col span={24}>
-        {chat ? (
-          <Button onClick={stopChat}>Stop Conversation</Button>
-        ) : (
-          <Space size={20}>
-            <Input
-              type="password"
-              placeholder="enter password"
-              onChange={(e: any) => setPassword(e.target.value)}
-            />
-            {!existed ? (
-              <Button onClick={signUpToChat}>Sign up</Button>
-            ) : (
-              <Button onClick={startChat}>Start chat</Button>
-            )}
-          </Space>
-        )}
-        {/* <HeaderChat chat={chat} setChat={setChat}/> */}
+        <HeaderChat
+          chat={chat}
+          setChat={setChat}
+          stopChat={stopChat}
+          startChat={startChat}
+          setPassword={setPassword}
+          password={password}
+        />
       </Col>
       {chat && (
         <Col span={24}>
@@ -296,94 +192,37 @@ const GunChat = () => {
                 <CopyPublicKey pubKey={myPublicKey || ''} />
               </Col>
               <Col span={24}>
-                <FindUser
-                  receiver={receiver}
-                  setUser={setReceiver}
-                  setTopic={setTopic}
-                />
+                <FindUser receiver={receiver} setUser={setReceiver} />
               </Col>
               <Col span={24}>
-                <Card
-                  style={{
-                    height: 'calc(100vh - 350px)',
-                    overflow: 'auto',
-                    background: '#f1f9f9',
-                    boxShadow: 'unset',
-                  }}
-                  bordered={false}
-                >
-                  {receiver ? (
-                    <Row gutter={[16, 16]}>
-                      {messages.map((mess, index) => {
-                        return (
-                          <Col span={24} key={index}>
-                            <Row
-                              gutter={[16, 16]}
-                              justify={
-                                walletAddress === mess.owner ? 'end' : 'start'
-                              }
-                            >
-                              <Col span={14}>
-                                <Card
-                                  bordered={false}
-                                  style={{
-                                    boxShadow: '0 0 15px #dadada',
-                                    borderRadius: 12,
-                                    backgroundColor:
-                                      walletAddress === mess.owner
-                                        ? '#69CCFA'
-                                        : '#ffff',
-                                  }}
-                                  bodyStyle={{ padding: '8px 12px' }}
-                                >
-                                  <Space direction="vertical" size={0}>
-                                    <Space>
-                                      {/* {avatar(mess.owner)} */}
-                                      <Typography.Text>
-                                        {mess.text}
-                                      </Typography.Text>
-                                    </Space>
-                                    <Typography.Text type="secondary">
-                                      <Space>
-                                        <Typography.Text
-                                          type="secondary"
-                                          style={{ fontSize: 12 }}
-                                        >
-                                          Time:
-                                        </Typography.Text>
-                                        <Typography.Text
-                                          type="secondary"
-                                          style={{ fontSize: 12 }}
-                                        >
-                                          {moment(mess.createdAt).format(
-                                            'YYYY-MM-DD HH:MM:ss',
-                                          )}
-                                        </Typography.Text>
-                                      </Space>
-                                    </Typography.Text>
-                                  </Space>
-                                </Card>
-                              </Col>
-                            </Row>
-                          </Col>
-                        )
-                      })}
-                    </Row>
-                  ) : (
-                    <Row gutter={[24, 24]}>
-                      {listPubKey.map((key) => (
-                        <Col span={24} key={key.address}>
-                          <Space>
-                            {key.address}
-                            <Button onClick={() => startToChat(key.address)}>
-                              Start Chat
-                            </Button>
-                          </Space>
-                        </Col>
-                      ))}
-                    </Row>
-                  )}
-                </Card>
+                <Tabs defaultActiveKey="chat-list">
+                  <Tabs.TabPane tab="chat-list" key="chat-list">
+                    <Card
+                      style={{
+                        height: 'calc(100vh - 350px)',
+                        overflow: 'auto',
+                        background: '#f1f9f9',
+                        boxShadow: 'unset',
+                      }}
+                      bordered={false}
+                    >
+                      {receiver ? (
+                        <ChatMessages />
+                      ) : (
+                        <ListConversation
+                          listConversation={listConversation}
+                          setReceiver={setReceiver}
+                        />
+                      )}
+                    </Card>
+                  </Tabs.TabPane>
+                  <Tabs.TabPane tab="waiting-list" key="waiting-list">
+                    <WaitingList
+                      setReceiver={setReceiver}
+                      setReceiverPK={setReceiverPK}
+                    />
+                  </Tabs.TabPane>
+                </Tabs>
               </Col>
               {receiver && (
                 <Col span={24}>
@@ -412,18 +251,6 @@ const GunChat = () => {
           </Card>
         </Col>
       )}
-      <Modal visible={visible}>
-        <Row gutter={[24, 24]} justify="center">
-          <Col span={24}>User A want to chat with u</Col>
-          <Col span={24}>{messRequest}</Col>
-          <Col span={24}>
-            <Space>
-              <Button onClick={acceptChat}>Yes</Button>
-              <Button onClick={rejectChat}>No</Button>
-            </Space>
-          </Col>
-        </Row>
-      </Modal>
     </Row>
   )
 }

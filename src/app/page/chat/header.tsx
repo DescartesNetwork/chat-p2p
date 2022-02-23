@@ -1,23 +1,40 @@
 import { Button, Input, Space } from 'antd'
-import { Fragment, useState } from 'react'
+import { AppState } from 'app/model'
+import { createKeyPair, decryptKeyPair } from 'app/model/key.controller'
+import { Fragment, useCallback } from 'react'
+import { useDispatch, useSelector } from 'react-redux'
 
 export type HeaderProps = {
   chat: boolean
+  setChat: (value: boolean) => void
   stopChat: () => void
-  setPassword: (e: any) => {}
-  signUpToChat: () => {}
   startChat: () => void
-  existed: boolean
+  setPassword: (e: any) => void
+  password: string
 }
 
 const HeaderChat = ({
   chat,
+  setChat,
   stopChat,
-  setPassword,
-  signUpToChat,
   startChat,
-  existed,
+  setPassword,
+  password,
 }: HeaderProps) => {
+  const dispatch = useDispatch()
+  const { keyPair } = useSelector((state: AppState) => state.key)
+
+  const signUpToChat = useCallback(async () => {
+    if (!password)
+      return window.notify({
+        type: 'error',
+        description: 'Please enter password',
+      })
+    await dispatch(createKeyPair({ password }))
+    await dispatch(decryptKeyPair({ password }))
+    return setChat(true)
+  }, [dispatch, password, setChat])
+
   return (
     <Fragment>
       {chat ? (
@@ -29,7 +46,7 @@ const HeaderChat = ({
             placeholder="enter password"
             onChange={(e: any) => setPassword(e.target.value)}
           />
-          {!existed ? (
+          {!keyPair ? (
             <Button onClick={signUpToChat}>Sign up</Button>
           ) : (
             <Button onClick={startChat}>Start chat</Button>

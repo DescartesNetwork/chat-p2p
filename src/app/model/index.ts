@@ -3,6 +3,8 @@ import { devTools, bigintSerializationMiddleware } from 'shared/devTools'
 
 import main from 'app/model/main.controller'
 import chat from 'app/model/chat.controller'
+import key from 'app/model/key.controller'
+import topic from 'app/model/topic.controller'
 
 /**
  * Isolated store
@@ -14,6 +16,8 @@ const model = configureStore({
   reducer: {
     main,
     chat,
+    key,
+    topic,
   },
 })
 
