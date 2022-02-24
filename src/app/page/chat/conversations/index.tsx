@@ -28,7 +28,7 @@ const ListConversation = ({
   return (
     <Row gutter={[24, 24]}>
       {Object.values(conversations).map((conversation) => (
-        <Col key={conversation.address}>
+        <Col key={conversation.topic}>
           <ConversationItem
             conversation={conversation}
             startToChat={startToChat}

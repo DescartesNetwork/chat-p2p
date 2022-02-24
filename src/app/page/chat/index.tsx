@@ -19,6 +19,7 @@ import { decryptKeyPair, fetchKeyPair } from 'app/model/key.controller'
 import { setTopic } from 'app/model/topic.controller'
 
 import 'antd/dist/antd.css'
+import UseConversations from 'app/hooks/useConversations'
 
 const GunChat = () => {
   const {
@@ -36,8 +37,8 @@ const GunChat = () => {
     },
     chat: { conversations },
   } = useSelector((state: AppState) => state)
-  console.log('conversations: ', conversations)
-
+  const tmp = UseConversations(topic)
+  console.log(tmp)
   const sharedKey = useMemo(() => {
     if (!receiverPK || !mySecretKey) return
     try {
@@ -90,6 +91,7 @@ const GunChat = () => {
     dispatch(setTopic({ topic: walletAddress }))
   }, [dispatch, walletAddress])
 
+  console.log()
   return (
     <Row gutter={[16, 16]}>
       <Col span={24}>

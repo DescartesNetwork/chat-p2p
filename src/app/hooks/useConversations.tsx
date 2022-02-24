@@ -40,8 +40,9 @@ const UseConversations = (topic: string) => {
       }
     })
     await messages.map().once(async (data, id) => {
-      if (!data || !data.owner) return
       console.log(data)
+
+      if (!data || !data.owner) return
       try {
         if (data.owner !== walletAddress && !keys.includes(data.owner)) {
           const messages = [data.chat]

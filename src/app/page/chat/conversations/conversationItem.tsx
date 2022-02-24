@@ -68,10 +68,17 @@ const ConversationItem = ({
   }, [getMessages])
 
   return (
-    <Space>
-      {address}
-      <Button onClick={() => startToChat(conversation)}>Start Chat</Button>
-      <Typography.Text>message: {message}</Typography.Text>
+    <Space direction="vertical">
+      <Space>
+        {address}
+        <Button onClick={() => startToChat(conversation)}>Start Chat</Button>
+      </Space>
+      <Space direction="vertical">
+        <Typography.Text>Message: {message?.text}</Typography.Text>
+        <Typography.Text type="secondary">
+          Time: {message?.createdAt}
+        </Typography.Text>
+      </Space>
     </Space>
   )
 }
