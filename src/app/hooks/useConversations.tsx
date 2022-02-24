@@ -1,12 +1,16 @@
 import { useWallet } from '@senhub/providers'
-import { db } from 'app/constants'
-import { addRequestChat, RequestChat } from 'app/model/chat.controller'
-import { Conversations } from 'app/page/chat'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useDispatch } from 'react-redux'
 
-const UseListConversation = (topic: string) => {
-  const [listConversation, setListConversation] = useState<Conversations[]>([])
+import {
+  addRequestChat,
+  Conversation,
+  fetchConversation,
+  RequestChat,
+} from 'app/model/chat.controller'
+import { db } from 'app/constants'
+
+const UseConversations = (topic: string) => {
   const dispatch = useDispatch()
   const {
     wallet: { address: walletAddress },
@@ -16,7 +20,6 @@ const UseListConversation = (topic: string) => {
     if (topic !== walletAddress) return
     const messages = db.get(topic)
     const keys: string[] = []
-    const keysReceived: Conversations[] = []
 
     await messages.map().once(async (data, id) => {
       if (!data || !data.owner) return
@@ -38,24 +41,26 @@ const UseListConversation = (topic: string) => {
     })
     await messages.map().once(async (data, id) => {
       if (!data || !data.owner) return
+      console.log(data)
       try {
-        if (data.owner !== walletAddress) {
-          if (!keys.includes(data.owner)) {
-            const requestChat: RequestChat = {
-              owner: data.owner,
-              publicKey: data.publicKey,
-              message: data.chat,
-            }
-            dispatch(addRequestChat({ requestChat }))
-          } else {
-            keysReceived.push({
-              publicKey: data.publicKey,
-              address: data.owner,
-            })
-            setTimeout(() => {
-              setListConversation(keysReceived)
-            }, 1000)
+        if (data.owner !== walletAddress && !keys.includes(data.owner)) {
+          const messages = [data.chat]
+          const requestChat: RequestChat = {
+            owner: data.owner,
+            publicKey: data.publicKey,
+            messages,
+            topic: data.commonTopic,
           }
+
+          dispatch(addRequestChat({ requestChat }))
+        }
+        if (data.owner !== walletAddress && keys.includes(data.owner)) {
+          const conversation: Conversation = {
+            publicKey: data.publicKey,
+            address: data.owner,
+            topic: data.commonTopic,
+          }
+          dispatch(fetchConversation({ conversation }))
         }
       } catch (er) {
         console.log(er)
@@ -66,7 +71,7 @@ const UseListConversation = (topic: string) => {
   useEffect(() => {
     listenMyTopic()
   }, [listenMyTopic])
-  return { listConversation }
+  return {}
 }
 
-export default UseListConversation
+export default UseConversations

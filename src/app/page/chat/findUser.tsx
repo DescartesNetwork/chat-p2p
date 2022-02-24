@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useDispatch } from 'react-redux'
 import { clearMessages } from 'app/model/chat.controller'
 import { setTopic } from 'app/model/topic.controller'
+import { useWallet } from '@senhub/providers'
 
 const FindUser = ({
   receiver,
@@ -15,11 +16,14 @@ const FindUser = ({
 }) => {
   const [value, setValue] = useState('')
   const dispatch = useDispatch()
+  const {
+    wallet: { address: walletAddress },
+  } = useWallet()
 
   const stopChat = () => {
     dispatch(clearMessages())
     setUser('')
-    dispatch(setTopic({ topic: '' }))
+    dispatch(setTopic({ topic: walletAddress }))
   }
 
   const selectReceiver = () => {

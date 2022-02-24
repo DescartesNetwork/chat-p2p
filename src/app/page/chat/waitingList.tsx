@@ -1,6 +1,6 @@
 import { useWallet } from '@senhub/providers'
 import { Button, Card, Col, Row, Space, Typography } from 'antd'
-import { db, TOPIC } from 'app/constants'
+import { db } from 'app/constants'
 import { AppState } from 'app/model'
 import {
   clearMessages,
@@ -31,25 +31,28 @@ const WaitingList = ({
   const dispatch = useDispatch()
 
   const acceptChat = async (requestChat: RequestChat) => {
-    const { owner, publicKey } = requestChat
-    const receiverTopic = owner
+    const { owner: receiverAddr, publicKey, topic: commonTopic } = requestChat
+    const receiverTopic = receiverAddr
     const id = new Date().toISOString()
-    const message = db
-      .get('messages')
-      .set({ publicKey: myPublicKey, owner: walletAddress, sendTo: owner })
+    const message = db.get('messages').set({
+      publicKey: myPublicKey,
+      owner: walletAddress,
+      sendTo: receiverAddr,
+    })
     await db.get(topic).get(id).put(message)
 
     /**Send data to receiver topic for get history*/
     await db.get(receiverTopic).get(id).put({
       publicKey: myPublicKey,
       owner: walletAddress,
-      sendTo: owner,
+      sendTo: receiverAddr,
+      commonTopic,
       rely: true,
     })
-    dispatch(setTopic({ topic: TOPIC }))
-    setReceiver(owner)
+    dispatch(setTopic({ topic: commonTopic }))
+    setReceiver(receiverAddr)
     setReceiverPK(publicKey)
-    dispatch(clearRequest({ requestChat }))
+    dispatch(clearRequest({ address: receiverAddr }))
     return dispatch(clearMessages())
   }
 
@@ -69,7 +72,7 @@ const WaitingList = ({
       bordered={false}
     >
       <Row gutter={[12, 12]} justify="center">
-        {requestChats.map((request) => (
+        {Object.values(requestChats).map((request) => (
           <Col span={20} key={request.owner}>
             <Card
               bordered={false}
@@ -90,19 +93,23 @@ const WaitingList = ({
                       </Typography.Text>
                     </Space>
                     <Typography.Text type="secondary">
-                      <Space>
-                        <Typography.Text
-                          type="secondary"
-                          style={{ fontSize: 12 }}
-                        >
-                          Message:
-                        </Typography.Text>
-                        <Typography.Text
-                          type="secondary"
-                          style={{ fontSize: 12 }}
-                        >
-                          {request.message}
-                        </Typography.Text>
+                      <Space direction="vertical">
+                        {request.messages.map((message, idx) => (
+                          <Space key={idx}>
+                            <Typography.Text
+                              type="secondary"
+                              style={{ fontSize: 12 }}
+                            >
+                              Message:
+                            </Typography.Text>
+                            <Typography.Text
+                              type="secondary"
+                              style={{ fontSize: 12 }}
+                            >
+                              {message}
+                            </Typography.Text>
+                          </Space>
+                        ))}
                       </Space>
                     </Typography.Text>
                   </Space>

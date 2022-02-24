@@ -2,49 +2,30 @@ import { useCallback, useEffect, useState, useMemo } from 'react'
 import nacl from 'tweetnacl'
 import util from 'tweetnacl-util'
 import { useDispatch, useSelector } from 'react-redux'
+import { useWallet } from '@senhub/providers'
 
-import { Col, Input, Row, Button, Card, Tabs } from 'antd'
-import { SendOutlined } from '@ant-design/icons'
+import { Col, Row, Card, Tabs } from 'antd'
+import WaitingList from './waitingList'
+import ChatMessages from './chatMessages'
+import CopyPublicKey from './copyPub'
+import HeaderChat from './header'
+import ListConversation from './conversations'
+import ActionChat from './actionChat'
 import FindUser from './findUser'
 
-import {
-  decryptingMessage,
-  encryptingMessage,
-  MessageEncrypt,
-} from 'app/page/key'
-import 'antd/dist/antd.css'
-import CopyPublicKey from './copyPub'
-import { fetchNewMessages, Message } from 'app/model/chat.controller'
 import { AppState } from 'app/model'
-import { db, TOPIC } from 'app/constants'
-import { useWallet } from '@senhub/providers'
-import HeaderChat from './header'
+import { db } from 'app/constants'
 import { decryptKeyPair, fetchKeyPair } from 'app/model/key.controller'
-import ListConversation from './listConversation'
-import ChatMessages from './chatMessages'
-import UseListConversation from 'app/hooks/useListConversation'
-import WaitingList from './waitingList'
 import { setTopic } from 'app/model/topic.controller'
 
-export type MessageData = MessageEncrypt & {
-  owner: string
-}
+import 'antd/dist/antd.css'
 
-export type KeyEncrypt = {
-  sk: string
-  pk: string
-}
-export type Conversations = {
-  address: string
-  publicKey: string
-}
 const GunChat = () => {
   const {
     wallet: { address: walletAddress },
   } = useWallet()
-  const [formChat, setFormChat] = useState('')
   const [receiver, setReceiver] = useState('')
-  const [receiverPK, setReceiverPK] = useState<any>()
+  const [receiverPK, setReceiverPK] = useState('')
   const [chat, setChat] = useState(false)
   const [password, setPassword] = useState('')
   const dispatch = useDispatch()
@@ -53,8 +34,9 @@ const GunChat = () => {
     key: {
       keyPairDecrypted: { myPublicKey, mySecretKey },
     },
+    chat: { conversations },
   } = useSelector((state: AppState) => state)
-  const { listConversation } = UseListConversation(topic)
+  console.log('conversations: ', conversations)
 
   const sharedKey = useMemo(() => {
     if (!receiverPK || !mySecretKey) return
@@ -71,88 +53,28 @@ const GunChat = () => {
     }
   }, [mySecretKey, receiverPK])
 
-  // const commonTopic = useMemo(() => {
-  //   if (!receiver) return ''
-  //   return walletAddress.substring(0, 22) + receiver.substring(22, 44)
-  // }, [receiver, walletAddress])
-
   const listenReceiverTopic = useCallback(async () => {
     if (topic !== receiver) return
     const messages = db.get(topic)
     messages.map().once(async (data, id) => {
       if (!data) return
       try {
-        /** get history when send request && accepted */
-        if (data.owner === receiver && data.sendTo === walletAddress) {
-          console.log('check')
-          setReceiverPK(data.publicKey)
-          dispatch(setTopic({ topic: TOPIC }))
-        }
-        /** get history when accept a request */
-        listConversation.forEach((item) => {
+        Object.values(conversations).forEach((item) => {
           if (item.address === data.sendTo) {
             setReceiverPK(item.publicKey)
-            dispatch(setTopic({ topic: TOPIC }))
+            dispatch(setTopic({ topic: data.commonTopic }))
           }
         })
       } catch (er) {
         console.log(er)
       }
     })
-  }, [dispatch, listConversation, receiver, topic, walletAddress])
-
-  const listenCommonTopic = useCallback(async () => {
-    if (!sharedKey) return
-    const messages = db.get(topic)
-    messages.map().once(async (data, id) => {
-      if (!data || !sharedKey) return
-      try {
-        const text = decryptingMessage(data, sharedKey) || ''
-        if (!text) return
-        const createdAt = id
-        const message: Message = {
-          text,
-          createdAt,
-          owner: data.owner,
-        }
-        dispatch(fetchNewMessages({ message }))
-      } catch (er) {
-        console.log(er)
-      }
-    })
-  }, [dispatch, sharedKey, topic])
+  }, [conversations, dispatch, receiver, topic])
 
   const startChat = useCallback(() => {
     dispatch(decryptKeyPair({ password }))
     return setChat(true)
   }, [dispatch, password])
-
-  const sendMessage = async () => {
-    if (!sharedKey) return
-    const messageEncrypted = encryptingMessage(formChat, sharedKey)
-    const id = new Date().toISOString()
-    const message = db
-      .get('messages')
-      .set({ ...messageEncrypted, owner: walletAddress })
-
-    db.get(topic).get(id).put(message)
-
-    return setFormChat('')
-  }
-
-  const requestChat = async () => {
-    const id = new Date().toISOString()
-    const chat = formChat
-    const message = db.get('messages').set({
-      chat,
-      publicKey: myPublicKey,
-      owner: walletAddress,
-      sendTo: receiver,
-    })
-    db.get(topic).get(id).put(message)
-
-    return setFormChat('')
-  }
 
   const stopChat = () => {
     setChat(false)
@@ -164,14 +86,10 @@ const GunChat = () => {
   }, [listenReceiverTopic])
 
   useEffect(() => {
-    listenCommonTopic()
-  }, [listenCommonTopic])
-
-  useEffect(() => {
     dispatch(fetchKeyPair())
     dispatch(setTopic({ topic: walletAddress }))
   }, [dispatch, walletAddress])
-  console.log(topic)
+
   return (
     <Row gutter={[16, 16]}>
       <Col span={24}>
@@ -207,11 +125,11 @@ const GunChat = () => {
                       bordered={false}
                     >
                       {receiver ? (
-                        <ChatMessages />
+                        <ChatMessages sharedKey={sharedKey} />
                       ) : (
                         <ListConversation
-                          listConversation={listConversation}
                           setReceiver={setReceiver}
+                          setReceiverPK={setReceiverPK}
                         />
                       )}
                     </Card>
@@ -225,27 +143,7 @@ const GunChat = () => {
                 </Tabs>
               </Col>
               {receiver && (
-                <Col span={24}>
-                  <Input
-                    name="text"
-                    value={formChat}
-                    onChange={(e) => setFormChat(e.target.value)}
-                    placeholder="Enter message"
-                    size="large"
-                    onPressEnter={
-                      topic === receiver ? requestChat : sendMessage
-                    }
-                    suffix={
-                      <Button
-                        type="text"
-                        size="small"
-                        onClick={topic === receiver ? requestChat : sendMessage}
-                        icon={<SendOutlined />}
-                      />
-                    }
-                    style={{ borderRadius: 8 }}
-                  />
-                </Col>
+                <ActionChat sharedKey={sharedKey} receiver={receiver} />
               )}
             </Row>
           </Card>

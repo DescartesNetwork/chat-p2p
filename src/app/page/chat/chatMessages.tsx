@@ -1,15 +1,49 @@
 import { useWallet } from '@senhub/providers'
-import { useSelector } from 'react-redux'
+import { useDispatch, useSelector } from 'react-redux'
 import moment from 'moment'
 
 import { Card, Col, Row, Space, Typography } from 'antd'
 import { AppState } from 'app/model'
+import { db } from 'app/constants'
+import { useCallback, useEffect } from 'react'
+import { decryptingMessage } from '../key'
+import { fetchNewMessages, Message } from 'app/model/chat.controller'
 
-const ChatMessages = () => {
-  const { messages } = useSelector((state: AppState) => state.chat)
+const ChatMessages = ({ sharedKey }: { sharedKey?: Uint8Array }) => {
+  const {
+    topic: { topic },
+    chat: { messages },
+  } = useSelector((state: AppState) => state)
   const {
     wallet: { address: walletAddress },
   } = useWallet()
+  const dispatch = useDispatch()
+
+  const listenCommonTopic = useCallback(async () => {
+    if (!sharedKey) return
+    const messages = db.get(topic)
+    messages.map().once(async (data, id) => {
+      if (!data || !sharedKey) return
+      try {
+        const text = decryptingMessage(data, sharedKey) || ''
+        if (!text) return
+        const createdAt = id
+        const message: Message = {
+          text,
+          createdAt,
+          owner: data.owner,
+        }
+        dispatch(fetchNewMessages({ message }))
+      } catch (er) {
+        console.log(er)
+      }
+    })
+  }, [dispatch, sharedKey, topic])
+
+  useEffect(() => {
+    listenCommonTopic()
+  }, [listenCommonTopic])
+
   return (
     <Row gutter={[16, 16]}>
       {messages.map((mess, index) => {
